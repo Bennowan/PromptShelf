@@ -19,11 +19,52 @@ if plugins_dir not in sys.path:
     sys.path.append(plugins_dir)
 
 # Color variables
-COLOR_BG_TREE = "#E8F0FE"
-COLOR_BTN_NEW = "#4CAF50"
-COLOR_BTN_SAVE = "#2196F3"
-COLOR_BTN_DELETE = "#f44336"
-COLOR_BTN_TEXT = "white"
+COLOR_WINDOW_BG = "#FFFFFF"                 # Main window background
+COLOR_BTN_NEW = "#4CAF50"                   # "New" button background
+COLOR_BTN_SAVE = "#2196F3"                  # "Save" button background
+COLOR_BTN_DELETE = "#f44336"                # "Delete" button background
+COLOR_BTN_TEXT = "white"                     # Text color for all main buttons
+
+COLOR_MENUBAR_BG = "#FFFFFF"                # Menu bar background
+COLOR_MENUBAR_TEXT = "#111111"              # Menu bar text
+
+COLOR_TREE_BG = "#E8F0FE"                   # Model tree background
+COLOR_TREE_TEXT = "#111111"                 # Model tree text
+COLOR_TREE_SELECTED_BG = "#D0E4FF"          # Selected tree item background
+COLOR_TREE_SELECTED_TEXT = "#111111"        # Selected tree item text
+
+COLOR_FILTER_BG = "#FFFFFF"                  # Filter input background
+COLOR_FILTER_TEXT = "#111111"                # Filter input text
+
+COLOR_SESSION_BG = "#FFFFFF"                 # Session list background
+COLOR_SESSION_ALT_BG = "#F7F7F7"            # Alternate row background in session list
+COLOR_SESSION_TEXT = "#111111"              # Session list text
+COLOR_SESSION_SELECTED_BG = "#CCE5FF"       # Selected session background
+COLOR_SESSION_SELECTED_TEXT = "#111111"     # Selected session text
+
+COLOR_TEXTEDIT_BG = "#FFFFFF"                # QTextEdit background
+COLOR_TEXTEDIT_TEXT = "#111111"             # QTextEdit text
+
+COLOR_FIELD_BG = "#FFFFFF"                   # QLineEdit background (tags, seed, size, sampler)
+COLOR_FIELD_TEXT = "#111111"                 # QLineEdit text
+
+COLOR_CONTROL_BG = "#FFFFFF"                 # QSpinBox / QDoubleSpinBox background
+COLOR_CONTROL_TEXT = "#111111"               # QSpinBox / QDoubleSpinBox text
+
+COLOR_SCROLLAREA_BG = "#FFFFFF"              # Scroll area background
+
+COLOR_PLUGINWINDOW_BG = "#FFFFFF"           # Plugin manager window background
+COLOR_PLUGINWINDOW_LABEL_TEXT = "#111111"   # Plugin manager labels text
+COLOR_PLUGINLIST_BG = "#FFFFFF"             # Plugin list background
+COLOR_PLUGINLIST_TEXT = "#111111"           # Plugin list text
+COLOR_PLUGINBTN_BG = "#2196F3"              # Plugin manager buttons background
+COLOR_PLUGINBTN_TEXT = "white"               # Plugin manager buttons text
+
+COLOR_SUGGESTION_BG = "#FFFFFF"             # Autocomplete suggestion background
+COLOR_SUGGESTION_TEXT = "#111111"           # Autocomplete suggestion text
+COLOR_SUGGESTION_HOVER_BG = "#EFEFEF"       # Autocomplete suggestion hover background
+COLOR_SUGGESTION_SELECTED_BG = "#DDEEFF"    # Autocomplete suggestion selected background
+
 
 MODEL_EXTS = (".ckpt", ".safetensors", ".dduf", ".pt")
 SESSION_BASE_DIR = "model_sessions"
@@ -36,21 +77,30 @@ plugins = config.get("plugins", [])
 
 # Import plugins and apply colors
 for plugin_name in plugins:
-     # Remove .py extension
     if plugin_name.lower().endswith(".py"):
         plugin_name = plugin_name[:-3]
     try:
         plugin_module = importlib.import_module(plugin_name)
+        plugin_colors = {}
         if hasattr(plugin_module, "get_colors"):
             plugin_colors = plugin_module.get_colors()
-            for var_name in ["COLOR_BG_TREE", "COLOR_BTN_NEW", "COLOR_BTN_SAVE", "COLOR_BTN_DELETE", "COLOR_BTN_TEXT"]:
-                if var_name in plugin_colors:
-                    globals()[var_name] = plugin_colors[var_name]
+
         print(f"Plugin loaded: {plugin_name}")
+
+        if isinstance(plugin_colors, dict):
+            for var_name, var_value in plugin_colors.items():
+                if not isinstance(var_name, str):
+                    continue
+                if var_name in globals():
+                    globals()[var_name] = var_value 
+                else:
+                    print(f"Variable '{var_name}' does not exist and cannot be overwritten.")
+
     except ImportError:
-        print(f"Plugin '{plugin_name}' could not be loaded.")
+        print(f"Plugin '{plugin_name}' konnte nicht geladen werden.")
     except Exception as e:
-        print(f"Error while executing plugin '{plugin_name}': {e}")
+        print(f"Fehler beim Ausführen des Plugins '{plugin_name}': {e}")
+
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
@@ -68,18 +118,23 @@ class PluginWindow(QWidget):
         self.config = config
         if "plugins" not in self.config:
             self.config["plugins"] = []
+        self.setStyleSheet(f"QWidget {{ background-color: {COLOR_PLUGINWINDOW_BG}; color: {COLOR_PLUGINWINDOW_LABEL_TEXT}; }}")
         layout = QVBoxLayout()
         self.label = QLabel("Imported plugins:")
+        self.label.setStyleSheet(f"QLabel {{ color: {COLOR_PLUGINWINDOW_LABEL_TEXT}; }}")
         layout.addWidget(self.label)
         self.plugin_list = QListWidget()
         self.plugin_list.addItems(self.config["plugins"])
+        self.plugin_list.setStyleSheet(f"QListWidget {{ background-color: {COLOR_PLUGINLIST_BG}; color: {COLOR_PLUGINLIST_TEXT}; }}")
         layout.addWidget(self.plugin_list)
         btn_layout = QHBoxLayout()
         self.add_button = QPushButton("add")
         self.add_button.clicked.connect(self.add_plugin)
+        self.add_button.setStyleSheet(f"background-color: {COLOR_PLUGINBTN_BG}; color: {COLOR_PLUGINBTN_TEXT};")
         btn_layout.addWidget(self.add_button)
         self.delete_button = QPushButton("delete")
         self.delete_button.clicked.connect(self.delete_plugin)
+        self.delete_button.setStyleSheet(f"background-color: {COLOR_PLUGINBTN_BG}; color: {COLOR_PLUGINBTN_TEXT};")
         btn_layout.addWidget(self.delete_button)
         layout.addLayout(btn_layout)
         self.setLayout(layout)
@@ -92,20 +147,24 @@ class PluginWindow(QWidget):
                 self.config["plugins"].append(plugin_name)
                 self.plugin_list.addItem(plugin_name)
                 save_config(self.config)
+
     def delete_plugin(self):
         selected_items = self.plugin_list.selectedItems()
         if not selected_items:
             return
         for item in selected_items:
             reply = QMessageBox.question(
-                self, "Confirm deletion",
+                self,
+                "Confirm deletion",
                 f"Do you really want to delete {item.text()}?",
                 QMessageBox.Yes | QMessageBox.No
             )
             if reply == QMessageBox.Yes:
-                self.config["plugins"].remove(item.text())
+                if item.text() in self.config["plugins"]:
+                    self.config["plugins"].remove(item.text())
                 self.plugin_list.takeItem(self.plugin_list.row(item))
                 save_config(self.config)
+
 
 class PromptManager(QtWidgets.QMainWindow):
     def __init__(self):
@@ -122,19 +181,28 @@ class PromptManager(QtWidgets.QMainWindow):
         self.model_tree = QtWidgets.QTreeWidget()
         self.model_tree.setHeaderHidden(True)
         self.model_tree.itemClicked.connect(self.load_sessions)
-        self.model_tree.setStyleSheet(f"QTreeWidget {{background-color: {COLOR_BG_TREE};}}")
+        self.model_tree.setStyleSheet(
+            f"QTreeWidget {{ background-color: {COLOR_TREE_BG}; color: {COLOR_TREE_TEXT}; }}"
+            f"QTreeWidget::item:selected {{ background-color: {COLOR_TREE_SELECTED_BG}; color: {COLOR_TREE_SELECTED_TEXT}; }}"
+        )
         self.splitter.addWidget(self.model_tree)
         right_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         self.splitter.addWidget(right_splitter)
         self.filter_input = QtWidgets.QLineEdit()
         self.filter_input.setPlaceholderText("Filter by name or tag...")
         self.filter_input.textChanged.connect(self.apply_filter)
+        self.filter_input.setStyleSheet(f"QLineEdit {{ background-color: {COLOR_FILTER_BG}; color: {COLOR_FILTER_TEXT}; }}")
         right_splitter.addWidget(self.filter_input)
         self.session_list = QtWidgets.QListWidget()
         self.session_list.itemClicked.connect(self.load_file)
         self.session_list.setAlternatingRowColors(True)
         self.session_list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.session_list.customContextMenuRequested.connect(self.open_context_menu)
+        self.session_list.setStyleSheet(
+            "QListWidget {{ background-color: %s; color: %s; alternate-background-color: %s; }}"
+            "QListWidget::item:selected {{ background-color: %s; color: %s; }}"
+            % (COLOR_SESSION_BG, COLOR_SESSION_TEXT, COLOR_SESSION_ALT_BG, COLOR_SESSION_SELECTED_BG, COLOR_SESSION_SELECTED_TEXT)
+        )
         right_splitter.addWidget(self.session_list)
         editor_container = QtWidgets.QWidget()
         editor_layout = QtWidgets.QVBoxLayout()
@@ -179,6 +247,7 @@ class PromptManager(QtWidgets.QMainWindow):
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(editor_container)
+        scroll.setStyleSheet(f"QScrollArea {{ background-color: {COLOR_SCROLLAREA_BG}; }}")
         right_splitter.addWidget(scroll)
         menubar = self.menuBar()
         settings_menu = menubar.addMenu("Settings")
@@ -191,12 +260,22 @@ class PromptManager(QtWidgets.QMainWindow):
         plugin_action = QtWidgets.QAction("Manage plugins", self)
         plugin_action.triggered.connect(self.open_plugin_window)
         settings_menu.addAction(plugin_action)
+        menubar.setStyleSheet(f"QMenuBar {{ background-color: {COLOR_MENUBAR_BG}; color: {COLOR_MENUBAR_TEXT}; }}")
+        self.pos_input.setStyleSheet(f"QTextEdit {{ background-color: {COLOR_TEXTEDIT_BG}; color: {COLOR_TEXTEDIT_TEXT}; }}")
+        self.neg_input.setStyleSheet(f"QTextEdit {{ background-color: {COLOR_TEXTEDIT_BG}; color: {COLOR_TEXTEDIT_TEXT}; }}")
+        self.notes_input.setStyleSheet(f"QTextEdit {{ background-color: {COLOR_TEXTEDIT_BG}; color: {COLOR_TEXTEDIT_TEXT}; }}")
+        self.tag_input.setStyleSheet(f"QLineEdit {{ background-color: {COLOR_FIELD_BG}; color: {COLOR_FIELD_TEXT}; }}")
+        self.sampler_input.setStyleSheet(f"QLineEdit {{ background-color: {COLOR_FIELD_BG}; color: {COLOR_FIELD_TEXT}; }}")
+        self.seed_input.setStyleSheet(f"QLineEdit {{ background-color: {COLOR_FIELD_BG}; color: {COLOR_FIELD_TEXT}; }}")
+        self.size_input.setStyleSheet(f"QLineEdit {{ background-color: {COLOR_FIELD_BG}; color: {COLOR_FIELD_TEXT}; }}")
+        self.steps_input.setStyleSheet(f"QSpinBox {{ background-color: {COLOR_CONTROL_BG}; color: {COLOR_CONTROL_TEXT}; }}")
+        self.cfg_input.setStyleSheet(f"QDoubleSpinBox {{ background-color: {COLOR_CONTROL_BG}; color: {COLOR_CONTROL_TEXT}; }}")
         self.init_autocomplete()
-
         if not self.model_path or not os.path.isdir(self.model_path):
             self.select_model_path()
         else:
             self.scan_models()
+
 
     def open_plugin_window(self):
         self.plugin_window = PluginWindow(self.config)
@@ -595,18 +674,21 @@ class PromptManager(QtWidgets.QMainWindow):
         )
         self.suggestion_list.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.suggestion_list.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.suggestion_list.setStyleSheet(
+            f"QListWidget {{ background-color: {COLOR_SUGGESTION_BG}; color: {COLOR_SUGGESTION_TEXT}; }}"
+            f"QListWidget::item:hover {{ background-color: {COLOR_SUGGESTION_HOVER_BG}; }}"
+            f"QListWidget::item:selected {{ background-color: {COLOR_SUGGESTION_SELECTED_BG}; }}"
+        )
         self.suggestion_list.hide()
-
         self.suggestion_list.itemClicked.connect(self.insert_suggestion)
-
         self.tag_input.textEdited.connect(self.update_suggestions)
-        self.tag_input.installEventFilter(self)  # für Fokus-Events
-
+        self.tag_input.installEventFilter(self)
         try:
             with open("tags.json", "r", encoding="utf-8") as f:
                 self.all_tags = json.load(f)
         except FileNotFoundError:
             self.all_tags = []
+
 
     def update_suggestions(self, text):
         cursor_pos = self.tag_input.cursorPosition()
