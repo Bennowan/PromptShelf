@@ -25,10 +25,13 @@ COLOR_BTN_SAVE = "#2196F3"
 COLOR_BTN_DELETE = "#f44336"
 COLOR_BTN_TEXT = "white"
 
+MODEL_EXTS = (".ckpt", ".safetensors", ".dduf", ".pt")
+SESSION_BASE_DIR = "model_sessions"
+CONFIG_FILE = "config.json"
+
 # Load config
 with open("config.json", "r") as f:
     config = json.load(f)
-
 plugins = config.get("plugins", [])
 
 # Import plugins and apply colors
@@ -36,7 +39,6 @@ for plugin_name in plugins:
      # Remove .py extension
     if plugin_name.lower().endswith(".py"):
         plugin_name = plugin_name[:-3]
-
     try:
         plugin_module = importlib.import_module(plugin_name)
         if hasattr(plugin_module, "get_colors"):
@@ -50,18 +52,11 @@ for plugin_name in plugins:
     except Exception as e:
         print(f"Error while executing plugin '{plugin_name}': {e}")
 
-MODEL_EXTS = (".ckpt", ".safetensors", ".dduf", ".pt")
-SESSION_BASE_DIR = "model_sessions"
-CONFIG_FILE = "config.json"
-
-
 def load_config():
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {"plugins": [], "model_path": "", "lora_path": ""}
-
-
 def save_config(config):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=4)
@@ -71,28 +66,21 @@ class PluginWindow(QWidget):
         super().__init__()
         self.setWindowTitle("Plugin-Verwaltung")
         self.config = config
-
-        # Make sure the key exists
         if "plugins" not in self.config:
             self.config["plugins"] = []
-
         layout = QVBoxLayout()
         self.label = QLabel("Imported plugins:")
         layout.addWidget(self.label)
-
         self.plugin_list = QListWidget()
         self.plugin_list.addItems(self.config["plugins"])
         layout.addWidget(self.plugin_list)
-
         btn_layout = QHBoxLayout()
         self.add_button = QPushButton("add")
         self.add_button.clicked.connect(self.add_plugin)
         btn_layout.addWidget(self.add_button)
-
         self.delete_button = QPushButton("delete")
         self.delete_button.clicked.connect(self.delete_plugin)
         btn_layout.addWidget(self.delete_button)
-
         layout.addLayout(btn_layout)
         self.setLayout(layout)
 
@@ -104,7 +92,6 @@ class PluginWindow(QWidget):
                 self.config["plugins"].append(plugin_name)
                 self.plugin_list.addItem(plugin_name)
                 save_config(self.config)
-
     def delete_plugin(self):
         selected_items = self.plugin_list.selectedItems()
         if not selected_items:
@@ -120,51 +107,46 @@ class PluginWindow(QWidget):
                 self.plugin_list.takeItem(self.plugin_list.row(item))
                 save_config(self.config)
 
-
 class PromptManager(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Prompt Explorer")
         self.resize(900, 500)
-
         self.config = load_config()
         self.plugin_manager = PluginManager()
         self.plugin_manager.load_plugins(self.config.get("plugins", []))
         self.model_path = self.config.get("model_path", "")
         self.lora_path = self.config.get("lora_path", "")
-
         self.splitter = QtWidgets.QSplitter()
         self.setCentralWidget(self.splitter)
-
-        # Linke Sidebar: Modelle
         self.model_tree = QtWidgets.QTreeWidget()
         self.model_tree.setHeaderHidden(True)
         self.model_tree.itemClicked.connect(self.load_sessions)
         self.model_tree.setStyleSheet(f"QTreeWidget {{background-color: {COLOR_BG_TREE};}}")
         self.splitter.addWidget(self.model_tree)
-
-        # Rechte Seite: Editor & Session-Liste
         right_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         self.splitter.addWidget(right_splitter)
-
+        self.filter_input = QtWidgets.QLineEdit()
+        self.filter_input.setPlaceholderText("Filter by name or tag...")
+        self.filter_input.textChanged.connect(self.apply_filter)
+        right_splitter.addWidget(self.filter_input)
         self.session_list = QtWidgets.QListWidget()
         self.session_list.itemClicked.connect(self.load_file)
         self.session_list.setAlternatingRowColors(True)
         self.session_list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.session_list.customContextMenuRequested.connect(self.open_context_menu)
         right_splitter.addWidget(self.session_list)
-
-        # Editor
         editor_container = QtWidgets.QWidget()
         editor_layout = QtWidgets.QVBoxLayout()
         form_layout = QtWidgets.QFormLayout()
         self.pos_input = QtWidgets.QTextEdit()
         self.neg_input = QtWidgets.QTextEdit()
         self.notes_input = QtWidgets.QTextEdit()
+        self.tag_input = QtWidgets.QLineEdit()
         form_layout.addRow("Positive Prompt:", self.pos_input)
         form_layout.addRow("Negative Prompt:", self.neg_input)
         form_layout.addRow("Notes:", self.notes_input)
-
+        form_layout.addRow("Tags:", self.tag_input)
         self.steps_input = QtWidgets.QSpinBox()
         self.steps_input.setRange(1, 1000)
         self.sampler_input = QtWidgets.QLineEdit()
@@ -173,19 +155,16 @@ class PromptManager(QtWidgets.QMainWindow):
         self.cfg_input.setSingleStep(0.1)
         self.seed_input = QtWidgets.QLineEdit("0")
         self.size_input = QtWidgets.QLineEdit("512x512")
-
         form_layout.addRow("Steps:", self.steps_input)
         form_layout.addRow("Sampler:", self.sampler_input)
         form_layout.addRow("CFG:", self.cfg_input)
         form_layout.addRow("Seed:", self.seed_input)
         form_layout.addRow("Size:", self.size_input)
-
         editor_layout.addLayout(form_layout)
-
-        button_layout = QHBoxLayout()
+        button_layout = QtWidgets.QHBoxLayout()
         self.new_btn = QtWidgets.QPushButton("New")
         self.save_btn = QtWidgets.QPushButton("Save")
-        self.delete_btn = QtWidgets.QPushButton("delete")
+        self.delete_btn = QtWidgets.QPushButton("Delete")
         self.new_btn.setStyleSheet(f"background-color: {COLOR_BTN_NEW}; color: {COLOR_BTN_TEXT};")
         self.save_btn.setStyleSheet(f"background-color: {COLOR_BTN_SAVE}; color: {COLOR_BTN_TEXT};")
         self.delete_btn.setStyleSheet(f"background-color: {COLOR_BTN_DELETE}; color: {COLOR_BTN_TEXT};")
@@ -196,14 +175,11 @@ class PromptManager(QtWidgets.QMainWindow):
         button_layout.addWidget(self.save_btn)
         button_layout.addWidget(self.delete_btn)
         editor_layout.addLayout(button_layout)
-
         editor_container.setLayout(editor_layout)
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(editor_container)
         right_splitter.addWidget(scroll)
-
-        # Menü
         menubar = self.menuBar()
         settings_menu = menubar.addMenu("Settings")
         model_path_action = QtWidgets.QAction("Change model path", self)
@@ -212,13 +188,11 @@ class PromptManager(QtWidgets.QMainWindow):
         lora_path_action = QtWidgets.QAction("Change LoRA path", self)
         lora_path_action.triggered.connect(self.select_lora_path)
         settings_menu.addAction(lora_path_action)
-        # Menü: Plugin-Verwaltung hinzufügen
         plugin_action = QtWidgets.QAction("Manage plugins", self)
         plugin_action.triggered.connect(self.open_plugin_window)
         settings_menu.addAction(plugin_action)
+        self.init_autocomplete()
 
-
-        # Start
         if not self.model_path or not os.path.isdir(self.model_path):
             self.select_model_path()
         else:
@@ -294,7 +268,6 @@ class PromptManager(QtWidgets.QMainWindow):
         elif action == export_action:
             self.export_file(item)
 
-
     def sanitize_filename(self, name):
         # Replace everything that is not alphanumeric or _ or -
         name = re.sub(r'[^\w\-]', '_', name)
@@ -352,25 +325,32 @@ class PromptManager(QtWidgets.QMainWindow):
             self, "Export completed", f"File exported to:\n{export_path}"
         )
         
-
-
-    def load_sessions(self, item):
-        if item.parent() is None:
-            return  # Category clicked
-
+    def load_sessions(self, item, column):
+        if not item:
+            return
         model_name = item.text(0)
-        parent_text = item.parent().text(0)
-        self.current_model_type = "LoRA" if parent_text == "LoRAs" else "Base"
+        if not model_name:
+            return
 
-        model_folder = os.path.join(SESSION_BASE_DIR, model_name)
         self.session_list.clear()
-        if os.path.exists(model_folder):
-            for f in sorted(os.listdir(model_folder)):
-                if f.endswith(".txt"):
-                    self.session_list.addItem(f)
+        model_dir = os.path.join(SESSION_BASE_DIR, model_name)
+        if not os.path.exists(model_dir):
+            os.makedirs(model_dir)
 
-        self.clear_editor()
-        self.load_editor_fields(self.current_model_type)
+        for filename in os.listdir(model_dir):
+            if filename.endswith(".json"):  # statt .txt
+                file_path = os.path.join(model_dir, filename)
+                tags = []
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        tags = data.get("tags", [])
+                except Exception as e:
+                    print(f"Fehler beim Laden von {filename}: {e}")
+
+                item_widget = QtWidgets.QListWidgetItem(filename)
+                item_widget.setData(QtCore.Qt.UserRole, tags)
+                self.session_list.addItem(item_widget)
 
     def load_editor_fields(self, session_type):
         form_layout = self.steps_input.parent().layout()
@@ -407,52 +387,68 @@ class PromptManager(QtWidgets.QMainWindow):
                 if field_item and field_item.widget():
                     field_item.widget().show()
 
-
     def load_file(self, item):
         model_item = self.model_tree.currentItem()
         if not model_item or not model_item.parent():
             return
+
         model_name = model_item.text(0)
         file_path = os.path.join(SESSION_BASE_DIR, model_name, item.text())
+
         if os.path.exists(file_path):
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read().strip()
             if content:
                 try:
+                    # Versuch JSON zu laden
                     self.parse_file_content(content)
                 except json.JSONDecodeError:
-                    QtWidgets.QMessageBox.warning(
-                        self, "Error", "The file does not contain valid JSON. Editor is being cleared."
-                    )
-                    self.clear_editor()
+                    # Fallback für Plain TXT
+                    for line in content.splitlines():
+                        if line.startswith("Positive Prompt:"):
+                            self.pos_input.setPlainText(line.replace("Positive Prompt:", "").strip())
+                        elif line.startswith("Negative Prompt:"):
+                            self.neg_input.setPlainText(line.replace("Negative Prompt:", "").strip())
+                        elif line.startswith("Notes:"):
+                            self.notes_input.setPlainText(line.replace("Notes:", "").strip())
+                        elif line.startswith("Tags:"):
+                            self.tag_input.setText(line.replace("Tags:", "").strip())
             else:
                 self.clear_editor()
+
 
     def parse_file_content(self, content):
         data = json.loads(content)
         self.pos_input.setPlainText(data.get("positive_prompt", ""))
         self.neg_input.setPlainText(data.get("negative_prompt", ""))
         self.notes_input.setPlainText(data.get("notes", ""))
+        tags = data.get("tags", [])
 
-        # All optional fields: check if available
+        if isinstance(tags, list):
+            tags = ", ".join(tags)
+            
+        self.tag_input.setText(tags)
         self.steps_input.setValue(data.get("steps", 1))
         self.sampler_input.setText(data.get("sampler", ""))
         self.cfg_input.setValue(data.get("cfg", 7.0))
-        
+
         seed_val = data.get("seed", 0)
         try:
             seed_val = int(seed_val)
         except (ValueError, TypeError):
             seed_val = 0
-        self.seed_input.setText(str(seed_val)) 
+        self.seed_input.setText(str(seed_val))
 
         self.size_input.setText(data.get("size", "512x512"))
+
+
 
     def gather_file_content(self):
         content = {
             "positive_prompt": self.pos_input.toPlainText(),
             "negative_prompt": self.neg_input.toPlainText(),
             "notes": self.notes_input.toPlainText(),
+            "tags": self.tag_input.text()
         }
 
         if getattr(self, "current_model_type", "Base") != "LoRA":
@@ -467,7 +463,9 @@ class PromptManager(QtWidgets.QMainWindow):
                 "seed": seed_val,
                 "size": self.size_input.text()
             })
+
         return json.dumps(content, indent=4)
+
 
     def clear_editor(self):
         self.pos_input.clear()
@@ -481,9 +479,31 @@ class PromptManager(QtWidgets.QMainWindow):
 
     def new_file(self):
         self.clear_editor()
-        now = datetime.now().strftime("%Y.%m.%d")
-        self.session_list.addItem(f"{now}.txt")
-        self.session_list.setCurrentRow(self.session_list.count() - 1)
+
+        now = datetime.now().strftime("%Y.%m.%d_%H-%M-%S")
+        file_name = f"{now}.json" 
+        folder_path = os.path.join("sessions", "default_model")  
+        os.makedirs(folder_path, exist_ok=True)
+        file_path = os.path.join(folder_path, file_name)
+
+        data = {
+            "positive": "",
+            "negative": "",
+            "notes": "",
+            "tags": []
+        }
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+
+        item = QtWidgets.QListWidgetItem(file_name)
+        item.setData(QtCore.Qt.UserRole, [])
+        self.session_list.addItem(item)
+        self.session_list.setCurrentItem(item)
+
+        self.pos_input.clear()
+        self.neg_input.clear()
+        self.notes_input.clear()
+        self.tag_input.clear()
 
     def save_file(self):
         current_item = self.session_list.currentItem()
@@ -495,9 +515,45 @@ class PromptManager(QtWidgets.QMainWindow):
         if not model_item or not model_item.parent():
             return
         model_name = model_item.text(0)
-        file_path = os.path.join(SESSION_BASE_DIR, model_name, current_item.text())
+
+        folder_path = os.path.join(SESSION_BASE_DIR, model_name)
+        os.makedirs(folder_path, exist_ok=True)
+
+        file_name = current_item.text()
+        if not file_name.endswith(".json"):
+            file_name += ".json"
+        file_path = os.path.join(folder_path, file_name)
+
+        tags = [tag.strip() for tag in self.tag_input.text().split(",") if tag.strip()]
+        data = {
+            "positive": self.pos_input.toPlainText(),
+            "negative": self.neg_input.toPlainText(),
+            "notes": self.notes_input.toPlainText(),
+            "tags": tags
+        }
+
         with open(file_path, "w", encoding="utf-8") as f:
-            f.write(self.gather_file_content())
+            json.dump(data, f, indent=2)
+
+        current_item.setData(QtCore.Qt.UserRole, tags)
+
+        try:
+            with open("tags.json", "r", encoding="utf-8") as f:
+                all_tags = json.load(f)
+        except FileNotFoundError:
+            all_tags = []
+
+        updated = False
+        for tag in tags:
+            if tag not in all_tags:
+                all_tags.append(tag)
+                updated = True
+
+        if updated:
+            with open("tags.json", "w", encoding="utf-8") as f:
+                json.dump(all_tags, f, ensure_ascii=False, indent=4)
+            self.all_tags = all_tags
+
         QtWidgets.QMessageBox.information(self, "Saved", "File saved!")
 
     def delete_file(self):
@@ -517,6 +573,89 @@ class PromptManager(QtWidgets.QMainWindow):
                     os.remove(file_path)
                 self.session_list.takeItem(self.session_list.row(current_item))
                 self.clear_editor()
+
+    def apply_filter(self):
+        filter_text = self.filter_input.text().lower()
+
+        for i in range(self.session_list.count()):
+            item = self.session_list.item(i)
+            name = item.text().lower()
+            tags = item.data(QtCore.Qt.UserRole)
+
+            if tags:  
+                tags_str = ",".join(tags).lower() if isinstance(tags, list) else str(tags).lower()
+            else:
+                tags_str = ""
+            item.setHidden(filter_text not in name and filter_text not in tags_str)
+
+    def init_autocomplete(self):
+        self.suggestion_list = QtWidgets.QListWidget(self)
+        self.suggestion_list.setWindowFlags(
+            QtCore.Qt.ToolTip | QtCore.Qt.FramelessWindowHint
+        )
+        self.suggestion_list.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.suggestion_list.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.suggestion_list.hide()
+
+        self.suggestion_list.itemClicked.connect(self.insert_suggestion)
+
+        self.tag_input.textEdited.connect(self.update_suggestions)
+        self.tag_input.installEventFilter(self)  # für Fokus-Events
+
+        try:
+            with open("tags.json", "r", encoding="utf-8") as f:
+                self.all_tags = json.load(f)
+        except FileNotFoundError:
+            self.all_tags = []
+
+    def update_suggestions(self, text):
+        cursor_pos = self.tag_input.cursorPosition()
+        current_text = text[:cursor_pos]
+
+        if "," in current_text:
+            last_part = current_text.split(",")[-1].strip()
+        else:
+            last_part = current_text.strip()
+
+        if not last_part:
+            self.suggestion_list.hide()
+            return
+
+        matches = [t for t in self.all_tags if t.lower().startswith(last_part.lower())]
+        matches = matches[:3]
+
+        if not matches:
+            self.suggestion_list.hide()
+            return
+
+        self.suggestion_list.clear()
+        for m in matches:
+            self.suggestion_list.addItem(m)
+
+        pos = self.tag_input.mapToGlobal(QtCore.QPoint(0, -self.suggestion_list.sizeHintForRow(0) * len(matches)))
+        self.suggestion_list.move(pos)
+        self.suggestion_list.resize(self.tag_input.width(), self.suggestion_list.sizeHintForRow(0) * len(matches))
+        self.suggestion_list.show()
+
+    def insert_suggestion(self, item):
+        cursor_pos = self.tag_input.cursorPosition()
+        text = self.tag_input.text()
+
+        parts = [p.strip() for p in text.split(",")]
+        if len(parts) > 1:
+            parts[-1] = item.text()
+        else:
+            parts[0] = item.text()
+
+        new_text = ", ".join(p for p in parts if p)  
+        self.tag_input.setText(new_text)
+        self.suggestion_list.hide()
+
+    def eventFilter(self, source, event):
+        if source is self.tag_input:
+            if event.type() == QtCore.QEvent.FocusOut:
+                self.suggestion_list.hide()
+        return super().eventFilter(source, event)
 
 class PluginManager:
     def __init__(self):
